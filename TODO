@@ -1,0 +1,41 @@
+Things to add to the parser:
+
+Add support for conditional definitions being defined based on conditional
+definitions. It's possible to have loops (detect them) but it's also possible
+to have unrelated conditions that are perfectly fine.  Not supporting
+conditional definitions based on other conditional definitions forces people to
+work-around perfectly fine situations for no apparent reason.
+
+We have support for $[foo:zap], which will be $[foo] if defined, and if not,
+zap the whole line from output.  We also have $[foo?] which will be "yes" if
+$[foo] is defined, and "no" otherwise. But we don't have a modifier like
+$[foo:opt] that will be $[foo] if $[foo] is defined, otherwise "". This seems
+like an obvious and useful addition.
+
+
+
+
+Support non-standard Portage and distfiles locations (requested
+by Caleb Cushing)
+
+Add support to targets so they can detect when another metro process
+may be building something identical, so metro doesn't try to kill off
+the other build.
+
+Use this in combination
+with the priority system to define paths.
+
+Add priority option for when and section annotations, so Metro can
+choose one based on priority if multiple ones match.
+
+ISO support
+
+add kernel build support (genkernel or raw)
+
+, and maybe for Metro 1.4:
+
+add a way to extend steps, so you can have a target-specific "Clean"
+as well as a global clean. This should be part of the data model and
+may use some kind of OOP or list concept? not quite DONE
+
+do lastdate with snapshots to avoid creating identical snapshot files

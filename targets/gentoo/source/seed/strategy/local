@@ -1,0 +1,6 @@
+[section source]
+
+build: $[target/build]
+subarch: $[target/subarch]
+arch_desc: $[target/arch_desc]
+version: << $[path/mirror/target/control]/version/stage3

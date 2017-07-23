@@ -1,0 +1,560 @@
+#!/usr/bin/python3
+
+import os
+import os.path
+import sys
+import glob
+import datetime
+import fnmatch
+import pwd, grp
+import json
+from subprocess import call
+
+os.chdir(os.path.join(os.path.dirname(os.path.realpath(__file__))))
+sys.path.append("../modules")
+
+from metro_support import lockFile, countFile, CommandRunner, MetroSetup
+from db import *
+
+# these variables are used for building:
+
+builds = ( )
+arches = ( )
+subarches = ( )
+
+# these variables, if defined, are used for repo management (cleaning, etc.):
+
+all_builds = ( )
+all_arches = ( )
+all_subarches = ( )
+stale_days = 3
+max_failcount = 3
+keep_num = 2
+
+def map_build(build, subarch, full, full_date):
+	return "full"
+digestgen = True
+cfgfile = os.path.join(os.path.expanduser("~"),".buildbot")
+if os.path.exists(cfgfile):
+	exec(open(cfgfile, "rb").read())
+else:
+	print("""
+Create a ~/.buildbot file that contains something like this (python syntax):
+
+builds = (
+	"funtoo-experimental",
+	"funtoo-current",
+	"funtoo-stable",
+	"gentoo-stable",
+)
+
+arches = (
+	"x86-32bit",
+	"x86-64bit",
+	"sparc-64bit",
+	"pure64"
+)
+
+# all subarches that are built here:
+subarches = ( 
+	"atom_32",
+	"atom_64",
+	"corei7",
+	"corei7-pure64",
+	"generic_32", 
+	"i686", 
+	"athlon-xp",
+	"pentium4",
+	"core2_32",
+	"amd64-k8_32",
+	"amd64-k8",
+	"amd64-k10",
+	"core2_64",
+	"generic_64",
+	"generic_64-pure64",
+	"ultrasparc",
+	"ultrasparc3",
+	"niagara",
+	"niagara2",
+	"generic_sparcv9"
+)
+
+# optional - how many days old it takes for a stage build to be considered "stale":
+# default = 3
+stale_days = 3
+
+# optional - how many consecutive failed builds of a subarch before it is pulled from
+# build rotation. default = 3
+max_failcount = 3
+
+# optional - number of builds to keep, default = 3
+keep_num = 3
+
+# optional - all subarches that are built + uploaded here:
+all_subarches = subarches + (
+	"amd64-piledriver",
+	"amd64-steamroller"
+)
+
+# optional:
+def map_build(build, subarch, full, full_date):
+	# arguments refer to last build...
+	if full == True:
+		buildtype = "freshen"
+	else:
+		buildtype = "full"
+	if subarch in [ "corei7", "corei7-pure64", "generic_64",  "generic_64-pure64" ]:
+		buildtype = buildtype + "+openvz"
+	return buildtype
+""")
+	sys.exit(1)
+
+if len(all_builds) == 0:
+	# if the all_variables are not defined, inherit values from the non-all vars:
+	all_builds = builds
+	all_arches = arches
+	all_subarches = subarches
+
+class SubArch(dbobject):
+	@classmethod
+	def _makeTable(cls,db):
+		cls.db = db
+		cls.__table__ = Table('subarch', db.metadata,
+			Column('id', Integer, primary_key = True),
+			Column('date', DateTime, index=True),
+			Column('date_str', String, index=True),
+			Column('path', String, index=True),
+			Column('build', String, index=True),
+			Column('arch', String, index=True),
+			Column('subarch', String, index=True),
+			Column('failcount', Integer, index=True),
+			Column('full_date', DateTime, index=True),
+			Column('full_date_str', String, index=True),
+			Column('do_build', Boolean, index=True)
+		)
+
+class BuildDir(dbobject):
+	@classmethod
+	def _makeTable(cls,db):
+		cls.db = db
+		cls.__table__ = Table('bdir', db.metadata,
+			Column('id', Integer, primary_key = True),
+			Column('date', DateTime, index=True),
+			Column('path', String, index=True),
+			Column('build', String, index=True),
+			Column('arch', String, index=True),
+			Column('subarch', String, index=True),
+			Column('date_str', String, index=True),
+			Column('complete', Boolean, index=True),
+			Column('full', Boolean, index=True)
+		)
+
+class Snapshot(dbobject):
+	@classmethod
+	def _makeTable(cls,db):
+		cls.db = db
+		cls.__table__ = Table('snapshot', db.metadata,
+			Column('id', Integer, primary_key = True),
+			Column('path', String, index=True),
+			Column('build', String, index=True),
+		)
+
+class RepositoryDatabase(Database):
+	__database__ = "sqlite:///cleaner.db"
+	def __init__(self):
+		Database.__init__(self,[BuildDir, Snapshot, SubArch])
+		self.associate()
+	def associate(self):
+		Database.associate(self,self.__database__)
+
+setup = MetroSetup()
+settings = setup.getSettings()
+initial_path = settings["path/mirror"]
+
+if __name__ == "__main__":
+	if os.path.exists("cleaner.db"):
+		os.unlink("cleaner.db")
+	db = RepositoryDatabase()
+	session = db.session
+	for build in all_builds:
+		if not os.path.exists("%s/%s" % (initial_path, build)):
+			continue
+		snapdir = "%s/%s/snapshots" % ( initial_path, build )
+		if os.path.isdir(snapdir) and not os.path.islink(snapdir):
+			for match in glob.glob("%s/portage-*.tar.xz" % snapdir):
+				basename = os.path.basename(match)
+				if basename == "portage-current.tar.xz":
+					continue
+				sna = Snapshot()
+				sna.path = match
+				sna.build = build
+				session.add(sna)
+		for arch in all_arches:
+			if not os.path.exists("%s/%s/%s" % ( initial_path, build, arch )):
+				continue
+			for subarch in all_subarches:
+				path = "%s/%s/%s/%s" % (initial_path, build, arch, subarch)
+				if not os.path.exists(path):
+					continue
+				most_recent = None
+				most_recent_str = None
+				most_recent_full = None
+				most_recent_full_str = None
+				failpath = path + "/.control/.failcount"
+				if not os.path.exists(failpath):
+					failcount = 0
+				else:
+					fc = countFile(failpath)
+					failcount = fc.count
+				for dirname in os.listdir(path):
+					if dirname == ".control":
+						continue
+					sha1 = dirname[10:]
+					instance = dirname[:10]
+					ipath = "%s/%s" % ( path, dirname )
+					if not os.path.isdir(ipath):
+						continue
+					complete = False
+					bdir = BuildDir()
+					if sha1:
+						# QA build -- use this special method for getting datestamp of directory.
+						spath = ipath + "/status"
+						if os.path.exists(spath):
+							complete = True
+							# grab mtime of status file:
+							bdir.date = datetime.datetime.utcfromtimestamp(os.path.getmtime(spath))
+							# use that to generate date string:
+							bdir.date_str = bdir.date.strftime("%Y-%m-%d")
+						else:
+							# build is in progress, so skip cleaning:
+							continue
+					else:
+						# datestamped build dir -- let's try to parse it:
+						try:
+							bdir.date = datetime.datetime.strptime(instance,"%Y-%m-%d")
+							bdir.date_str = instance
+							for match in glob.glob("%s/stage3*.tar.*" % ipath):
+								complete = True
+								break
+						except ValueError:
+							# didn't work? Use old date on purpose to force cleaning:
+							bdir.date = datetime.datetime(1980,1,1)
+							bdir.date_str = "1980-01-01"
+					bdir.path = ipath
+					bdir.build = build
+					bdir.arch = arch
+					bdir.subarch = subarch
+					bdir.complete = complete
+					if complete:
+						for match in glob.glob("%s/stage1*.tar.*" % ipath):
+							bdir.full = True
+							break
+					session.add(bdir)
+					if complete and ( most_recent == None or most_recent < bdir.date ):
+						most_recent = bdir.date
+						most_recent_str = bdir.date_str
+						if bdir.full:
+							most_recent_full = bdir.date
+							most_recent_full_str = bdir.date_str
+				sa = SubArch()
+				sa.build = build
+				sa.arch = arch
+				sa.subarch = subarch
+				sa.date = most_recent
+				sa.date_str = most_recent_str
+				sa.full_date = most_recent_full
+				sa.full_date_str = most_recent_full_str
+				sa.failcount = failcount
+				sa.path = path
+				# is subarch in our list of things to build, or just to maintain (ie. clean, for main repo)?
+				if build in builds and arch in arches and subarch in subarches:
+					sa.do_build = True
+				else:
+					sa.do_build = False
+				session.add(sa)
+
+	session.commit()
+now = datetime.datetime.now()
+# more than 3 fails and we remove the build from our rotation:
+def find_build(q,min_age=stale_days,max_age=None):
+	for x in q:
+		if min_age != None:
+			if x.date != None and now - x.date < datetime.timedelta(days=min_age):
+				continue	
+		if max_age != None:
+			if x.date == None:
+				continue
+			elif now - x.date > datetime.timedelta(days=max_age):
+				continue	
+		# skip it if it is currently being built....
+		tsfilepath = x.path+"/.control/.multi_progress"
+		if os.path.exists(tsfilepath):
+			tsfile = lockFile(tsfilepath)
+			# ensure lockFile is not stale. The exists() method will clean it up automatically if it is:
+			if tsfile.exists():
+				sys.stderr.write("# Build at %s in progress, skipping...\n" % x.path)
+				continue
+		# output: build subarch was-last-build-full(had-a-stage-1)(boolean) date
+		print("build=%s" % x.build)
+		print("arch_desc=%s" % x.arch)
+		print("subarch=%s" % x.subarch)
+		print("fulldate=%s" % x.full_date_str)
+		print("nextdate=%s" % datetime.datetime.strftime(datetime.datetime.now(), "%Y-%m-%d"))
+		print("failcount=%s" % x.failcount)
+		mb = map_build(x.build, x.subarch, x.full_date == x.date and x.date != None, x.full_date_str)
+		# handle case where map_build returns "full+openvz":
+		if type(mb) == str:
+			mb = mb.split("+")
+		# handle case where map_build returns ("full", "openvz"):
+		print("target=%s" % mb[0])
+		if len(mb) > 1:
+			print("extras='%s'" % " ".join(mb[1:]))
+		else:
+			print("extras=''")
+		sys.exit(0)
+while len(sys.argv) > 1:
+	if sys.argv[1] == "clean":
+		del sys.argv[1]
+		for build in all_builds:
+			# first -- remove any more than 3 complete builds, starting with oldest, of course:
+			for arch in all_arches:
+				for subarch in all_subarches:
+					out = session.query(BuildDir).filter_by(build=build).filter_by(arch=arch).filter_by(subarch=subarch).filter_by(complete=True).order_by(BuildDir.date_str).all()
+					for x in out[0:-keep_num]:
+						print(("rm -rf %s" % x.path))
+					for x in out[-keep_num:]:
+						print(("# keeping %s" % x.path))
+			# next, remove any more than 2 snapshots:
+			sna = session.query(Snapshot).filter_by(build=build).order_by(Snapshot.path).all()
+			for x in sna[0:-keep_num]:
+				print(("rm %s*" % x.path))
+			for x in sna[-(keep_num-1):]:
+				print(("# keeping %s" % x.path))
+		# Now, look at incomplete builds. Clean them out when they're stale and not the most recent build.
+		for x in session.query(BuildDir).filter_by(complete=False):
+			# ignore non-stale builds for cleaning -- they could be in-progress...
+			y = session.query(SubArch).filter_by(subarch=x.subarch).filter_by(arch=x.arch).filter_by(build=x.build).first()
+			if x.date != None and now - x.date > datetime.timedelta(days=stale_days) and y.date != x.date:
+				# don't zap most recent...
+				print(("rm -rf %s* # not complete and stale, not most recent build" % x.path))
+			else:
+				print("# keeping %s" % x.path)
+	elif sys.argv[1] == "nextbuild":
+		del sys.argv[1]
+		sa = session.query(SubArch)
+		myfail = 0
+		while myfail < max_failcount:
+			# we start with failcount of zero, and prioritize not-yet-built stages:
+			empties = sa.filter(SubArch.__table__.c.do_build == True).filter(SubArch.__table__.c.date == None).filter(SubArch.__table__.c.build.in_(builds)).filter_by(failcount=myfail)
+			find_build(empties)
+			# next, we look for builds with a failcount of "myfail+1", but haven't been built in at least stale_days * 2. 
+			# This prevents them from being pushed out of the build rotation if we aren't building *every* stale stage (if we always have some builds queued at any given time.)
+			if myfail + 1 < max_failcount:
+				baddies = sa.filter(SubArch.__table__.c.do_build == True).filter(SubArch.__table__.c.build.in_(builds)).filter_by(failcount=myfail+1).order_by(SubArch.__table__.c.date)
+				find_build(baddies,min_age=stale_days*2)
+			# if we can't find one, we look for a failcount of zero, but prioritize by date:
+			oldies = sa.filter(SubArch.__table__.c.do_build == True).filter(SubArch.__table__.c.date != None).filter(SubArch.__table__.c.build.in_(builds)).filter_by(failcount=myfail).order_by(SubArch.__table__.c.date)
+			find_build(oldies)
+			myfail += 1
+			# if no builds are found, we increment failcount, and try again:
+		# THIS PART IS DISABLED. IF A BUILD IS BEYOND ITS FAILCOUNT, IT IS OUT OF ROTATION UNTIL SOMEONE MANUALLY INTERVENES:
+		# if our loop didn't present a build, we ignore date, look for all builds with failcount >= our max, and then order by failcount, and pick a build:
+		#baddies = sa.filter(SubArch.__table__.c.do_build == True).filter(SubArch.__table__.c.build.in_(builds)).filter(SubArch.__table__.c.failcount >= failcount).order_by(SubArch.__table__.c.failcount.asc())
+		#find_build(baddies)
+		sys.exit(1)
+	elif sys.argv[1] == "empties":
+		del sys.argv[1]
+		empties = session.query(SubArch).filter(SubArch.__table__.c.do_build == True).filter(SubArch.__table__.c.date == None).filter(SubArch.__table__.c.build.in_(builds))
+		for x in empties:
+			print(x.path)
+	elif sys.argv[1] == "fails":
+		del sys.argv[1]
+		fails = session.query(SubArch).filter(SubArch.__table__.c.failcount > 0).order_by(SubArch.__table__.c.failcount.desc())
+		goods = session.query(SubArch).filter(SubArch.__table__.c.failcount == 0)
+		for x in fails:
+			print(str(x.failcount).rjust(4), "None".rjust(12) if not x.date else datetime.datetime.strftime(x.date, "%Y-%m-%d").rjust(12), x.path)
+		for x in goods:
+			print(str(x.failcount).rjust(4), "None".rjust(12) if not x.date else datetime.datetime.strftime(x.date, "%Y-%m-%d").rjust(12), x.path)
+	elif sys.argv[1] == "index.xml":
+		del sys.argv[1]
+		from lxml import etree
+		from copy import deepcopy
+		"""
+		<subarches>
+			<subarch name="amd64-bulldozer" builds="1,2">
+				<build id="1" variant="pure64+hardened" build="funtoo-current" path="/funtoo-current/blah/blah" latest="2014-12-31"/>
+				<build id="2" variant="" build="funtoo-current" path="/funtoo-current/blah/blah" latest="2014-12-31"/>
+			</subarch>
+			<fails>
+				<build id="1" variant="pure64+hardened" build="funtoo-current" path="/funtoo-current/blah/blah" latest="2014-12-31" failcount="2"/>
+			</fails>
+		</subarches>
+	"""
+		outxml = etree.Element("subarches")
+		fails = etree.Element("fails")
+		outxml.append(fails)
+		subarch_builds = {}
+		for x in session.query(SubArch):
+			s = x.subarch
+			if s[-7:] == "-pure64":
+				s = s[:-7]
+			if s not in subarch_builds:
+				subarch_builds[s] = []
+			subarch_builds[s].append(x)
+		numfails = 0
+		for s in subarch_builds:
+			subarch_xml = etree.Element("subarch")
+			subarch_xml.attrib["name"] = s
+			# we treat "hardened' and "pure64" as "variants" of the main build (current/stable/experimental) -- to make things clearer for users.
+			count = 1
+			info_json_path = None
+			for b in subarch_builds[s]:
+				# variant
+				v = []
+				if b.subarch[-7:] == "-pure64":
+					# "variant"
+					v.append("pure64")
+				if b.build[-5:] == "-next":
+					continue
+				elif b.build[-9:] == "-hardened":
+					v.append("hardened")
+					build = b.build[:-9]
+				else:
+					build = b.build
+				build_xml = etree.Element("build")
+				build_xml.attrib["id"] = str(count)
+				build_xml.attrib["variant"] = '+'.join(v)
+				build_xml.attrib["build"] = build
+				build_xml.attrib["path"] = b.path[len(initial_path):]
+				build_xml.attrib["latest"] = "None" if not b.date else datetime.datetime.strftime(b.date, "%Y-%m-%d") 
+				if b.date:
+					build_xml.attrib["download"] = b.path[len(initial_path):] + "/" + build_xml.attrib["latest"] + "/stage3-" + b.subarch + "-" + b.build + "-" + build_xml.attrib["latest"] + ".tar.xz"
+					if not info_json_path:
+						bifn = os.path.join(b.path,b.date_str,"build-info.json")
+						if os.path.exists(bifn):
+							info_json_path = bifn
+				subarch_xml.append(build_xml)
+				if b.failcount > 0:
+					numfails += 1
+					fail_xml = deepcopy(build_xml)
+					fail_xml.attrib["id"] = str(numfails)
+					fail_xml.attrib["failcount"] = str(b.failcount)
+					fails.append(fail_xml)
+				count += 1
+			subarch_xml.attrib["builds"] = ",".join(map(str,range(1,count)))
+
+			# We found extracted CFLAGS, etc from most recent build -- grab this info and add it to our XML:
+			if info_json_path:
+				with open(info_json_path,"r") as bif:
+					bif_json = json.loads(bif.read())
+					for x in bif_json:
+						subarch_xml.attrib[x] = bif_json[x]
+			outxml.append(subarch_xml)
+		fails.attrib["builds"] = ",".join(map(str,range(1,numfails + 1)))
+	 
+		outf = open(os.path.join(initial_path,"index.xml"),"wb")
+		outf.write(etree.tostring(outxml, encoding="UTF-8", pretty_print=True, xml_declaration=True))
+	elif sys.argv[1] == "zap":
+		del sys.argv[1]
+		for x in session.query(SubArch).filter(SubArch.__table__.c.do_build == True).filter(SubArch.__table__.c.failcount > 0):
+			failpath = "%s/.control/.failcount" % x.path
+			if os.path.exists(failpath):
+				print("Removing %s..." % failpath)
+				os.unlink(failpath)
+	elif sys.argv[1] == "cmd":
+		# this option exists to run an external script. The concept is that you can mirror all files by running a mirror script
+		# and then re-run index.xml, which updates the wiki with new stage3 metadata. Thus all download links -- even mirror links --
+		# should work
+		del sys.argv[1]
+		if len(sys.argv) <= 1:
+			print("Not enough arguments for 'cmd' option. Specify script to run.")
+			sys.exit(1)
+		cmd = sys.argv[1]
+		if not os.path.exists(cmd):
+			print("Cmd argument %s does not exist; exiting." % cmd)
+			sys.exit(1)
+		del sys.argv[1]
+		myc = CommandRunner(settings=None,logging=False)
+		retval = myc.run([cmd], env={})
+		if retval != 0:
+			print("Error running cmd... exiting.")
+			sys.exit(1)
+	elif sys.argv[1] == "digestgen":
+		del sys.argv[1]
+		if not digestgen:
+			continue
+		owner = settings["path/mirror/owner"]
+		group = settings["path/mirror/group"]
+		uid = pwd.getpwnam(owner)[2]
+		gid = grp.getgrnam(group)[2] 
+		print("Generating hashes...")
+		links = []
+		for root, dirnames, filenames in os.walk(initial_path):
+			for filename in fnmatch.filter(filenames, '*.tar.*'):
+				if filename[-4:] == ".txt":
+					continue
+				if filename[-4:] == ".gpg":
+					continue
+				p = os.path.join(root, filename)
+				if os.path.islink(p):
+					links.append(os.path.join(dirnames,p))
+					continue
+				if not os.path.exists(p+".hash.txt"):
+					sys.stdout.write('h')
+					sys.stdout.flush()
+					call("PATH=/bin/:/usr/bin echo sha256 $(sha256sum %s | cut -f1 -d' ') > %s.hash.txt" % ( p, p ), shell=True)
+				os.lchown(p+".hash.txt",uid,gid)
+				if not os.path.exists(p+".gpg"):
+					sys.stdout.write('g')
+					sys.stdout.flush()
+					call("PATH=/bin/:/usr/bin gpg --use-agent --output %s.gpg --detach-sig %s" % (p, p), env=os.environ, shell=True) 
+				if os.path.exists(p+".gpg"):
+					os.lchown(p+".gpg",uid,gid)
+				# CLEANUP LOOP START:
+				# for every link to a tarball, make sure that links to hashes are in place.
+				# also clean up dead tarball links:
+				for link in links:
+					# link = link to a TARBALL
+					abs_realpath = os.path.normpath(os.path.join(os.path.dirname(link),os.readlink(link)))
+					if os.path.exists(link):
+						dead = False
+					else:
+						# tarball link is stale, doesn't exist at all
+						dead = True
+						print(link + " dead; cleaning up")
+					for ext in [ '.hash.txt', '.gpg' ]:
+						extlink = link + ext
+						# if link to hash or gpg exists...
+						if dead or os.path.lexists(extlink):
+							# remove it!
+							if dead:
+								print(extlink + " dead; cleaning up")
+							os.unlink(extlink)
+						# if the real hash file exists...
+						if not dead and os.path.exists(abs_realpath + ext):
+							# create link to hash!
+							os.symlink(os.readlink(link) + ext, extlink)
+						if os.path.lexists(extlink):
+							# we found a link, let's make sure it has correct perms
+							os.lchown(extlink, uid, gid)
+				# CLEANUP LOOP START
+		print()
+		print("Cleaning up old hashes...")
+		# This check goes the other way -- find all hashes, and make sure that the corresponding tarball exists. Otherwise,
+		# remove.
+		for root, dirnames, filenames in os.walk(initial_path):
+			for ext in [ '.hash.txt', '.gpg' ]:
+				for filename in fnmatch.filter(filenames, '*' + ext):
+					p = os.path.join(root, filename)
+					ptar = p[:-len(ext)]
+					if not os.path.exists(ptar):
+						os.unlink(p)
+						sys.stdout.write('.')
+						sys.stdout.flush()
+		print()
+		print("Done!")
+	else:
+		print("Don't understand: %s" % sys.argv[1])
+		sys.exit(1)
+
+# vim: ts=4 sw=4 noet

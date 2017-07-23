@@ -1,0 +1,325 @@
+#!/usr/bin/python3 -OO
+
+import os, sys, getopt, types, subprocess
+__app__ = os.path.basename(sys.argv[0])
+
+# we need this hard-coded path because we need a module here before we can parse our config file
+__maintainer__ = "Daniel Robbins <drobbins@funtoo.org>"
+
+__license__ = """ Distributed under the terms of the GNU General Public License version 2
+ Metro comes with ABSOLUTELY NO WARRANTY; This is free software, and you are welcome to
+ redistribute it under certain conditions. See /usr/lib/metro/LICENSE for details.
+"""
+__status__ = "Release"
+__version__ = "2.0.1"
+
+def usage():
+	version()
+	print(""" metro [OPTION]... [FILE]...
+
+ -h, --help                 Print this message
+ -V, --version              Display version information
+
+ -d, --debug                Enable debug mode
+ -f, --debug-flexdata       Resolve and print flexdata tree
+ -v, --verbose              Verbose mode
+
+ -N, --notrigger            Disable build triggers
+
+ -k [key], --key [key]      Print value of [key], ie. "distfiles"
+
+ [FILE]                     File(s) to parse and evaluate
+	""")
+
+def version():
+	print(" " + __app__, "version", __version__)
+	print()
+	print(" Copyright 2008-2015 Funtoo Technologies, LLC")
+	print(" Maintainer:", __maintainer__)
+	print()
+	print(" Web: http://www.funtoo.org")
+	print(" Documentation: http://www.funtoo.org/Metro")
+	print()
+	print(__license__)
+
+class Metro:
+	def __init__(self):
+		self.debug = False
+		self.debug_flexdata = False
+		self.verbose = False
+		self.configfile = None
+		self.optdict = {}
+		self.ts = None
+		self.multi_ts = None
+		self.opts = None
+		self.args = None
+
+		# Step 0: parse out the command line arguments
+		if len(sys.argv) < 2:
+			usage()
+			sys.exit(1)
+
+		try:
+			self.opts, self.args = getopt.getopt(sys.argv[1:], "dfhvxVk:l:", ["debug", "debug-flexdata", "help", "verbose", "version", "key="])
+		except getopt.GetoptError:
+			usage()
+			sys.exit(1)
+		# command-line supplied values such as: target/version: 2008.10.12
+		self.metro_args = dict(list(zip(self.args[::2], self.args[1::2])))
+
+		self.optdict = dict(self.opts)
+
+		self.debug = self.has_opts(["-d", "--debug"])
+		self.debug_flexdata = self.has_opts(["-f", "--debug-flexdata"])
+		self.verbose = self.has_opts(["-v", "--verbose"])
+
+		# Step 1: check preconditions
+		if os.getuid() != 0:
+			raise RuntimeError("this script requires root privileges to operate")
+
+		# Step 2: set up metro modules and prepare to parse settings:
+		self.setup = MetroSetup(verbose=self.verbose,debug=self.debug)
+		if self.setup == None:
+			# setup object will handle printing any errors:
+			sys.exit(1)
+
+	def run(self):
+		# Step 3: check for "special" help/version options, handle them and exit:
+		if self.has_opts(["-h", "--help"]):
+			usage()
+			sys.exit(0)
+		elif self.has_opts(["-V", "--version"]):
+			version()
+			sys.exit(0)
+
+		# Step 5: Initialize Metro data
+		settings = self.setup.getSettings(self.metro_args)
+
+		if self.has_opts(["-k", "--key"]):
+			print(settings[self.get_opts(["-k", "--key"])])
+			sys.exit(0)
+
+		# Step 6: Create list of targets to run, checking whether "multi" mode is enabled
+		if "multi" in settings and settings["multi"] == "yes":
+			targetlist = settings["multi/targets"].split()
+		elif settings.has_key("target"):
+			targetlist = [settings["target"]]
+		else:
+			raise RuntimeError("please specify a target or enable multi mode")
+
+		self.run_targets(targetlist, self.args)
+
+	def has_opts(self, opts, fnc=any):
+		return fnc(key in self.optdict for key in opts)
+
+	def get_opts(self, opts):
+		result = None
+		for key, value in list(self.optdict.items()):
+			if key in opts:
+				result = value
+		return result
+
+	def qa_hook(self,settings):
+		if not "qa/type" in settings or not settings["qa/type"] == "jira":
+			return
+	@staticmethod
+	def dump_settings(settings):
+		keys = list(settings.keys())
+		keys.sort()
+		for key in keys:
+			try:
+				value = settings[key]
+			except:
+				print(key+" cannot be resolved with this target!")
+			else:
+				if type(value) is list:
+					print(key+": [...]")
+				else:
+					print(key+": "+str(settings[key]))
+
+	def run_targets(self, targetlist, args):
+		print("Running targetlist: %s" % targetlist)
+		temp_targets = targetlist[:]
+		try:
+			temp_targets.remove("snapshot")
+		except ValueError:
+			pass
+
+		abort = error = user_abort = False
+
+		if len(temp_targets):
+
+			# We are doing a multi-target build:
+
+			# It looks like we are building something. Therefore, we should "lock" the build/arch/subarch.
+			# This locking will allow other multi-target runs to abort early, and allow buildbot to actually
+			# skip over in-progress multi-targets so it can build the next multi-target (allowing parallel
+			# multi-target builds.
+
+			initial_settings = self.setup.getSettings(self.metro_args)
+
+			multi_tsfn = initial_settings["path/mirror/target/control"] + "/.multi_progress"
+			self.multi_ts = lockFile(multi_tsfn)
+			if self.multi_ts.exists():
+				print("Multi-target already in progress -- %s exists. Exiting." % self.multi_ts.path)
+				sys.exit(1)
+			else:
+				if not self.multi_ts.create():
+					print("Could not create multi-target lock file %s" % self.multi_ts.path)
+					sys.exit(1)
+		current_target = None
+		for targetname in targetlist:
+			current_target = targetname
+			# We start by grabbing settings for this target:
+
+			settings = self.setup.getSettings(self.metro_args,{"target": targetname})
+
+			# Now, we move to defining lockfiles, and logging setup:
+			if targetname == "snapshot":
+				tsfn = targ = settings["path/mirror/snapshot"]
+				tsfn = os.path.join(os.path.dirname(tsfn), "." + os.path.basename(tsfn) + "_progress")
+				cr = CommandRunner(settings, logging=False)
+			else:
+				tsfn = os.path.join(settings["path/mirror/target/control"], "." + targetname + "_progress")
+				targ = settings["path/mirror/target"]
+				cr = CommandRunner(settings)
+
+			# Now, we find the target and initialize it:
+
+			target = self.find_target(settings,cr)
+
+			cr.mesg("Running target %s with class %s" % (targetname, settings["target/class"]))
+
+			if settings["release/type"] == "official":
+				#Let's see if our target exists. Should we replace it? Or should we just skip it?
+				if "metro/options" in settings and "replace" in settings["metro/options"].split():
+					if os.path.exists(targ):
+						cr.mesg("Removing existing file %s..." % targ)
+						target.cmd(self.cmds["rm"] + " -f " + targ)
+				elif os.path.exists(targ):
+					cr.mesg("File %s already exists - skipping..." % targ)
+					target.run_script("trigger/ok/run", optional=True)
+					continue
+			else:
+				# for QA builds, if a "status" file exists in the target path, this means we've already run.
+				# Don't run again.
+				if os.path.exists(settings["path/mirror/target/path"]+"/status"):
+					cr.mesg("Status file already exists for target - skipping...")
+					continue
+
+			# Okay, we need to build our target. Let's create an "in progress" lock file:
+
+			# dump all settings
+			if self.debug_flexdata:
+				Metro.dump_settings(settings)
+			self.ts = lockFile(tsfn)
+			abort = False
+			error = False
+			user_abort = False
+			try:
+				if self.ts.exists():
+					if targetname == "snapshot":
+						cr.mesg("Another snapshot is running... waiting for it to complete...")
+						okay = self.ts.wait(60 * 15)
+						if not okay:
+							cr.mesg("Other snapshot did not complete in time (15 minutes.) Aborting.")
+							abort = error = True
+							break
+						else:
+							# snapshot was done by someone else, so we don't need to do it:
+							continue
+					else:
+						cr.mesg("Target already in progress -- %s exists. Aborting." % self.ts.path)
+						abort =  True
+				else:
+					if not self.ts.create():
+						cr.mesg("Could not create lock file %s -- please ensure that %s directory exists." % ( self.ts.path, os.path.dirname(self.ts.path)))
+						abort = error = True
+				if abort:
+					break
+				else:
+					try:
+						# This is where the target actually gets run
+						target.run()
+					except MetroError as m:
+						cr.mesg("Metro encountered an error: %s" % m)
+						abort = error = True
+						break
+					except KeyboardInterrupt:
+						raise KeyboardInterrupt
+					except:
+						cr.mesg("Metro encountered an unexpected error!")
+						if self.ts:
+							self.ts.unlink()
+						if self.multi_ts:
+							self.multi_ts.unlink()
+						raise
+					cr.mesg("Target run complete")
+					self.ts.unlink()
+			except KeyboardInterrupt:
+				cr.mesg("Target %s aborted due to user interrupt (ctrl-C)" % targetname)
+				abort = user_abort = True
+				if self.ts != None:
+					self.ts.unlink()
+				# break out of multi-target loop so we can exit:
+				break
+		if self.multi_ts != None:
+			self.multi_ts.unlink()
+		if self.ts != None:
+			self.ts.unlink()
+
+		official = initial_settings["release/type"] == "official"
+		failcnt_fn = initial_settings["path/mirror/target/control"] + "/.failcount"
+		status_fn  = initial_settings["path/mirror/target/path"] + "/status"
+		failcnt = countFile(failcnt_fn)
+
+		initial_settings["target"] = current_target
+		initial_settings["success"] = "no" if error else "yes"
+
+		if error:
+			if official:
+				print("Incrementing failcount.")
+				# increment failcount - we record consecutive fails
+				failcnt.increment()
+			sf = open(status_fn,"w")
+			sf.write("fail")
+			sf.close()
+			if error and not user_abort:
+				# don't run failure QA hook if user aborted it.
+				self.qa_hook(initial_settings)
+		elif not user_abort:
+			if official:
+				print("Removing failcount.")
+				# we didn't fail - remove the fail counter if it exists:
+				failcnt.unlink()
+			sf = open(status_fn,"w")
+			sf.write("ok")
+			sf.close()
+			self.qa_hook(initial_settings)
+		if abort or error:
+			sys.exit(1)
+		else:
+			sys.exit(0)
+
+	def find_target(self, settings, cr):
+		"""
+
+		Use the "target/class" setting in our metadata to initialize the proper class defined in the modules/targets.py module.
+
+		The targets.__dict__ dictionary contains all the objects in the targets module. We look inside it to see if the class
+		defined in "target/class" exists in there and is a class. If not, we raise an exception.
+
+		"""
+		cls = settings["target/class"].capitalize()+"Target"
+		if cls not in self.setup.targets.__dict__:
+			raise NameError("target class "+cls+" not defined in modules/targets.py.")
+		if type(self.setup.targets.__dict__[cls]) != type:
+			raise NameError("target class "+cls+" does not appear to be a class.")
+		return self.setup.targets.__dict__[cls](settings, cr)
+
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), "modules"))
+from metro_support import lockFile, countFile, MetroError, CommandRunner, MetroSetup
+m = Metro()
+m.run()
+
+# vim: ts=4 sw=4 noet

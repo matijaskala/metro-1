@@ -1,0 +1,285 @@
+# ChangeLog for metro
+# Copyright 2008-2014 Funtoo Technologies, LLC; Distributed under the GPL v2
+
+*metro-1.5.1 (19 Mar 2010)
+
+  Move from dev-util/git to dev-vcs/git (Gentoo upstream change).
+  Disable funtoo udev in openvz - not necessary with newer udevs that
+  auto-disable but keeping it anyway.
+
+*metro-1.5.0 (21 Feb 2010)
+
+  support for portage/files/package.mask (Caleb Tennis)
+  deprecate vserver target (Benedikt Bohm)
+  add baselayout/services support (Benedikt Bohm)
+  /etc/shadow perm changes to sync with Gentoo (Benedikt Bohm)
+  Rename section git to snapshot/source for consistency (Benedikt Bohm)
+  Make MAKEOPTS optional (Benedikt Bohm)
+  Rewrite of snapshot target (Benedikt Bohm)
+  Use 10.0 profile in Gentoo builds.
+  New core2_32 subarch.
+  New opteron_32 subarch.
+  New mirror cleaning script (scripts/cleaner.sh)
+  New download stats script (scripts/dlstats.sh)
+  Add --keep-going=n to emerge to allow immediate build aborts.
+  Locale.gen CONFIG_PROTECT fix.
+
+*metro-1.4.1 (29 Jun 2009)
+
+  .control directory format improved further.
+  various fixes.
+
+*metro-1.4.0 (26 Jun 2009)
+
+  Removal of all conditionals - conditionals deprecated to simplify
+  implementation.
+  New .control directory format.
+  Added ssse3 to HOSTUSE for phenom subarch
+  ccache robustness fix
+  reworking of fslayout - moved to relative paths
+  python-2.6 fix
+  "emerge" target improvements and fix
+  Added dhcpcd to Gentoo's stage3, too.
+  git-snapshot - allow active branch for tarball to be specified.
+  emerge/packages/clean support
+  Added missing device nodes (urandom,random,zero) to openvz spec.
+  Multi-line variable support.
+  Auto-clean configurable on/off.
+  Funtoo stage2 build fixes and cleanups; addition of perl-5.10
+  global disabling of sandbox during builds
+
+*metro-1.3.0 (1 Apr 2009)
+
+  1 Apr 2009; Daniel Robbins <drobbins@funtoo.org>: New feature enhancement
+  release.
+
+  NEW FEATURES:
+
+  Multi-mode: Metro can now build multiple targets with a single command.
+  This functionality is called "multi-mode" and the multi-mode settings
+  are currently defined on a per-build basis, in /etc/metro/builds/.
+  scripts/build.sh has been updated to take advantage of multi-mode.
+  Multi-mode is used by passing "multi: yes" to Metro.
+
+  Triggers: Triggers are arbitrary scripts that can be run when a build
+  completes. In Metro 1.3.0, "success" triggers have been added to Metro.
+  This allows digests to be generated, or critical files to be updated, when a
+  build completes successfully. Metro currently uses triggers to update the
+  "lastdate" and "subarch" control files. scripts/build.sh has been simplified
+  as it no longer has to manually update the control files.
+
+  Linux vserver target: Thanks to a contribution by Benedikt Bohm,
+  Metro can now build Linux vserver templates in addition to OpenVZ
+  templates.
+
+  New native32 and native64 subarches: have gcc optimize for your locally-detected
+  CPU - contributed by Jeff Mitchell.
+
+  New generic32 and generic64 subarches, which will use -mtune=generic and build
+  a generic version optimized for modern CPUs. Be sure to use an x86 or
+  amd64 seed stage for building your own generic32 and generic64 builds.
+
+  New opteron and opteron-sse3 subarches. These are AMD-specific 64-bit
+  builds.
+
+  Phenom and i686 subarches have been improved.
+
+  New, cleaner filesystem layout for the mirror directory -- yes, even more
+  reorganization. Unstable funtoo builds are now in the "~funtoo" directory.
+  Notice how the "~" is now associated with the build (there is a
+  corresponding /etc/metro/builds/~funtoo.conf) rather than the subarch. If
+  you want to build an unstable funtoo amd64 build, set metro/build: to
+  ~funtoo and target/subarch: to amd64 (not ~amd64). This is a more logical
+  and normalized path structure.
+
+  scripts/build.sh has been updated so that it works the same way it always
+  did -- "scripts/build.sh ~amd64 freshen" still does the same thing, for
+  example, even though Metro no longer uses "~amd64" internally.
+
+  SECURITY:
+
+  Local perms: Metro enforces stricter permissions on its work directories in
+  order to prevent malicious injecting of files and/or binaries into builds.
+
+  A security hole in baselayout-2.0.0 has been addressed by ensuring that
+  /etc/shadow is readable and writeable only by the root user. An additional
+  security baseline check has been added to all Gentoo targets which ensures
+  that /etc/shadow and other critical files have proper permissions and
+  ownership.
+
+  PARSER:
+
+  Parser now supports relative paths in collect annotations, such as
+  "[collect ./stage/steps.spec]"
+
+  Continued work on "new" parser, which Metro isn't using yet. Enhanced
+  error reporting capabilities.
+
+  BUILD IMPROVEMENTS:
+
+  New chroot/test step which current performs a security baseline check for
+  critical files to ensure that permissions and ownership are correct.
+
+  gentoo/stage3-freshen target now uses --deep and --newuse. gentoo/stage3
+  now runs eselect vi to enable busybox vi on the default stage3 build.
+
+  gentoo/stage3-freshen target now emerges @preserved-rebuild set if it
+  exists to ensure things are properly rebuilt.
+
+  chroot-based targets now run steps/chroot/{pre,post}run, just like the
+  stage targets. (Contributor: Benedikt Bohm)
+
+  New portage/devices target to specify the device node sets to create
+  using MAKEDEV (Contributor: Benedikt Bohm). Specifying device node sets
+  will cause Metro to not bind-mount /dev and /dev/pts inside the build
+  chroot.
+
+  GENERAL BUG FIXES:
+
+  Bind mounts will work properly even if /var/tmp/metro contains a symlink
+  somewhere in the path (ie. /var/tmp is a symlink.) (Credit for bug report:
+  Tim Dysinger)
+
+  Even more bind-mount robustness fixes, which don't fix a particular bug
+  but should handle unusual problems even more carefully.
+
+*metro-1.2.3 (02 Feb 2009)
+
+  02 Feb 2009; Daniel Robbins <drobbins@funtoo.org>: New feature enhancement
+  release: "package cache" support for stage1/stage2/stage3/stage3-quick,
+  every build has its own private compiler cache directory, reworking of
+  directory structure for caches in /var/tmp/metro, stage3-quick build fix,
+  tar command-line rsync snapshot fix from Yannick Chabanois
+  (yannickchabanois@zugaina.org), probe enhancements and normalization,
+  Phenom support from VÃ­ctor RomÃ¡n Archidona <daijo@daijo.o>, world file
+  fix.
+
+*metro-1.2.2 (19 Dec 2008)
+
+  19 Dec 2008; Daniel Robbins <drobbins@funtoo.org>: Parser bug fix
+*metro-1.2.1 (17 Dec 2008)
+
+  17 Dec 2008; Daniel Robbins <drobbins@funtoo.org>: New release: fix a
+  couple of silly bugs.
+
+*metro-1.2 (15 Dec 2008)
+
+  15 Dec 2008; Daniel Robbins <drobbins@funtoo.org>: New release:
+  The 1.2 release contains quite a few
+  * NEW target: "stage3-freshen" uses emerge -up world to update stage
+  * NEW target: "stage3-quick" builds stage3->stage3, skipping stage1 and 2.
+  * NEW target: "git-snapshot" creates a full .tar.bz2 snapshot of git repo
+    with the .git directory intact, so it is a full working git repo when
+    unpacked.
+  * NEW target: "emerge" for adding packages to an existing stage3
+  * NEW subarch: ~core2 for Intel Core 2 series processors. Supported with
+    gcc 4.3.2 which is in the funtoo build.
+  * Updated targets: "openvz" updated to support OpenRC 0.4.0.
+  * stage3-freshen supports emerge/packages/force target, which is a list
+    of packages to rebuild using "emerge <packages>". This is a great way
+    to force a rebuild of packages that may need to be rebuilt but did not
+    get a rev-bump (ie. openrc.:)
+  * Metro now properly cleans /var/tmp/metro after it is done, unless the
+    build aborted due to an error.
+  * scripts/build.sh: now supports stage3-freshen and stage3-quick by
+    allowing an extra "quick" or "freshen" option as the last argument.
+  * scripts/build.sh: now creates a "current" symlink pointing to the most
+    recent stage3 built. This "current" symlink exists in the subarch
+    directory and the filename is "stage3-subarch-current.tar.bz2."
+  * scripts/build.sh: now uses "git-snapshot" for funtoo builds, so funtoo
+    snapshots are now double the size but are a full working and "git pull"-
+    able git repo, simplifying funtoo install process.
+  * stage3 targets: try to ensure that /etc/make.conf.example exists.
+    Create a symlink from /etc/make.conf.example to
+    /usr/share/portage/config/make.conf.example.
+  * metro core: robust mount point detection using /proc/mounts instead of
+    output from the mount command, which can be unreliable.
+  * metro core: more robust umount algorithm.
+  * metro core: local name support, so your custom stages don't need to be
+    called "funtoo" anymore. Also quite useful with the "emerge" target for
+    creating custom stage3's with different names.
+  * metro core: ccache works correctly, but has been disabled by default as
+    it may cause build failures when used with Portage parallel merges
+    (--jobs) and we now have "stage3-freshen" and "stage3-quick" when we need
+    a stage3 built quickly.
+  * parser syntax: For conditionals, the "in" keyword is now supported as
+    an equivalent for "is".
+  * parser syntax: New "lax" expansion method, ie: $[foo:lax] will expand
+    to foo if it is defined, otherwise it will not throw a parser error
+    (as it normally would) and instead expand to a dummy value which may
+    contain spaces.
+  * Documentation: github wiki documentation updated to reflect new features
+    and QuickStart Guide refined to be easier to understand.
+  * Projects: new projects/ directory contains source code for funtoo.org
+    Web site. Funtoo.org Web site redesigned to be more of a portal for new
+    Funtoo builds. The funtoo Web site can be generated by running
+    "pytext index.html" (sent to stdout.) Embedded python code automatically
+    updates Web site symlinks to point to most recent versions of builds
+    and list relevant build-related information. Support for displaying
+    build dates in human-parseable form (ie. "Yesterday" or "2 Days Ago".)
+
+*metro-1.1 (04 Nov 2008)
+
+  04 Nov 2008; Daniel Robbins <drobbins@funtoo.org>: New release:
+  * Reorganized /etc/metro directory
+  * NEW: "Builds" defined in /etc/metro/builds/ - all key build information
+    now in a single file for convenience.
+  * NEW: "FSLayouts" defined in /etc/metro/fslayouts/ - all mirror-related
+    file names and path structures now in a single file.
+  * NEW: OpenVZ template support for Funtoo stages, enabled in
+    scripts/build.sh
+  * NEW: Reorganized file paths inside /usr/lib/metro.
+  * NEW: Working gentoo/emerge target, when you just want to take a stage3
+    and create something new by emerging stuff in it.
+  * NEW: Targets now have an OS prefix. What was target: snapshot is now
+    target: gentoo/snapshot, etc. The path structure in /usr/lib/metro has
+    also been improved so that people can easily create a
+    /usr/lib/metro/targets/myos/ directory and start hacking.
+  * NEW: Several parser bug fixes
+  * FIX: Improvements to metro have allowed scripts/build.sh to be simplified.
+  * NEW: Improved error and exception handling
+  * NEW: Enhanced Portage git snapshot support - Metro will now keep a
+    local cache of a git repository so it doesn't need to re-clone it
+    every time, saving bandwidth. This cache location is defined in the
+    path/cache/git variable in /etc/metro/metro.conf.
+  * Embedded Python interpreter can no longer reference Metro metadata
+    directly. This prevents weird side-effects from occurring.
+  * NEW: Conditional expansion - a variable such as $[foo?] will get
+    expanded to "yes" if defined and "no" if not defined, providing
+    easy integration with scripts so you don't throw a parser exception
+    by referencing an undefined variable.
+  * NEW: "zap" expansion - in a multi-line element, a variable such
+    as $[foo:zap] will get expanded to the name of the variable if it is
+    defined. If it is not defined, however, then the entire line will
+    be deleted from the output. This allows very compact conditional
+    lines in templates like this:
+    CFLAGS=$[portage/CFLAGS:zap]
+  * FIX: MAKEOPTS now properly applied to Gentoo builds, speeding up
+    builds on multi-core systems significantly.
+  * NEW: [options parse/lax] and [options parse/strict] to disable and
+    enable strict parsing, respectively. When lax parsing is enabled,
+    any referenced undefined variables in multi-line elements will get
+    dummy values, but an exception will not be thrown.
+  * NEW: conditonal sections - it's now possible to write:
+    [section foo when bar]
+    This is equivalent to the old:
+    [section foo]
+    [when bar]
+  * NEW: conditional equality - it's now possible for all conditionals
+    to test for equality, such as:
+    [section foo when bar is oni]
+    or
+    [when bar is oni]
+  * NEW: conditional list-match - it's now possible to see if an element
+    matches a list of values, such as:
+    [section foo when target/subarch is x86 amd64 pentium4]
+    This section will be active if target/subarch has a value that matches
+    one of the specified values.
+  * CHANGE: multi-line elements that are referenced inside other multi-line
+    elements, using the syntax $[[foo]], will only get expanded if they
+    appear at the beginning of the line. This allows them to easily be
+    commented out by prefixing them by a "#" or any other character. In this
+    case, the $[[foo]] will not be expanded and will be passed to the output
+    as-is.
+  * CHANGE: path/mirror/srcstage and path/mirror/deststage have been
+    renamed to /path/mirror/source and path/mirror/target respectively.
