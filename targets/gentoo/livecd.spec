@@ -69,13 +69,6 @@ then
 	sed -i 's/^[# ]*\(gtk_theme=\).*$/\1$[desktop/theme/gtk:zap]/' /etc/lxdm/lxdm.conf
 fi
 
-if [ -f /etc/lightdm/lightdm-gtk-greeter.conf ]
-then
-	sed -i 's/^[# ]*\(background=\).*$/\1#295377/' /etc/lxdm/lxdm.conf
-	sed -i 's/^[# ]*\(theme-name=\).*$/\1$[desktop/theme/gtk:zap]/' /etc/lxdm/lxdm.conf
-	sed -i 's/^[# ]*\(icon-theme-name=\).*$/\1$[desktop/theme/icons:zap]/' /etc/lxdm/lxdm.conf
-fi
-
 if [ -f /etc/lightdm/lightdm.conf ]
 then
 	sed -i 's/^[# ]*\(autologin-user=\).*$/\1liveuser/' /etc/lightdm/lightdm.conf
@@ -83,10 +76,28 @@ then
 	sed -i 's/^[# ]*\(greeter-session=\).*$/\1$[desktop/lightdm_greeter:zap]/' /etc/lightdm/lightdm.conf
 fi
 
-if [ '$[desktop/lightdm_greeter:lax]' = lightdm-webkit-greeter ] && [ -f /etc/lightdm/lightdm-webkit-greeter.conf ]
-then :
-	sed -i 's/^[# ]\(webkit-theme=\).*$/\1$[desktop/lightdm_theme:zap]/' /etc/lightdm/lightdm-webkit-greeter.conf
-fi
+case '$[desktop/lightdm_greeter:lax]' in
+	lightdm-gtk-greeter)
+		if [ -f /etc/lightdm/lightdm-gtk-greeter.conf ]
+		then
+			sed -i 's/^[# ]*\(background=\).*$/\1#295377/' /etc/lightdm/lightdm-gtk-greeter.conf
+			sed -i 's/^[# ]*\(theme-name=\).*$/\1$[desktop/theme/gtk:zap]/' /etc/lightdm/lightdm-gtk-greeter.conf
+			sed -i 's/^[# ]*\(icon-theme-name=\).*$/\1$[desktop/theme/icons:zap]/' /etc/lightdm/lightdm-gtk-greeter.conf
+		fi
+	;;
+	lightdm-webkit-greeter)
+		sed -i 's/^[# ]\(webkit-theme=\).*$/\1$[desktop/lightdm_theme:zap]/' /etc/lightdm/lightdm-webkit-greeter.conf
+	;;
+	slick-greeter)
+		install -d /etc/lightdm
+		cat > /etc/lightdm/slick-greeter.conf << EOF
+[Greeter]
+background=#295377
+theme-name=$[desktop/theme/gtk:zap]
+icon-theme-name=$[desktop/theme/icons:zap]
+EOF
+	;;
+esac
 
 if [ -e /etc/sddm.conf ]
 then
