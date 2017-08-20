@@ -65,6 +65,9 @@ emerge $eopts -Ou `cat /var/db/pkg/$(qlist -Iv '^virtual/libc\>')/RDEPEND` || di
 # update perl
 emerge $eopts -Ou perl || die
 
+# install MAKEDEV
+[ -x /sbin/MAKEDEV ] || emerge $eopts -n makedev || die
+
 cat > /tmp/build.py << "EOF"
 $[[files/pythonjunk]]
 EOF
@@ -163,9 +166,19 @@ do
 
 done
 
-[ -d fd ] || ln -svf /proc/self/fd fd || die
-[ -L stdin ] || ln -svf /proc/self/fd/1 stdin || die
-[ -L stdout ] || ln -svf /proc/self/fd/1 stdout || die
-[ -L stderr ] || ln -svf /proc/self/fd/2 stderr || die
-[ -L core ] || ln -svf /proc/kcore core || die
+if [ -x /bin/settrans ]
+then
+	rmdir shm
+	MAKEDEV -D /dev std vcs random
+	for x in 0 1 2 3
+	do
+		MAKEDEV -D /dev tty${x} ttyS${x} ttyp${x}
+	done
+else
+	MAKEDEV console -d .
+	MAKEDEV kmsg -d .
+	MAKEDEV ptmx -d .
+	MAKEDEV sda -d .
+	MAKEDEV std -d .
+fi
 ]
