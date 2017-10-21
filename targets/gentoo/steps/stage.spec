@@ -125,9 +125,9 @@ $[profile/subarch:zap]
 $[profile/build:zap]
 $[profile/flavor:zap]
 EOF
-	mixins=""
-	mixins=$[profile/mix-ins:zap]
-	for mixin in $mixins; do
+	mixins=()
+	mixins=( $[profile/mix-ins:zap] )
+	for mixin in "${mixins[@]}" ; do
 		echo $mixin >> /etc/portage/make.profile/parent
 	done
 	echo "New-style profile settings:"
@@ -141,9 +141,9 @@ ${path}arch/$[profile/arch:zap]
 ${path}release/$[profile/release:zap]
 ${path}flavor/$[profile/flavor:zap]
 EOF
-	mixins=""
-	mixins=$[profile/mix-ins:zap]
-	for mixin in $mixins; do
+	mixins=()
+	mixins=( $[profile/mix-ins:zap] )
+	for mixin in "${mixins[@]}" ; do
 		echo ${path}mix-ins/$mixin >> /etc/portage/make.profile/parent
 	done
 	echo "New-style profile settings:"
