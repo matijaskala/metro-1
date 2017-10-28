@@ -81,8 +81,7 @@ export BOOTSTRAP_USE="$(portageq envvar BOOTSTRAP_USE | sed -e 's/python_targets
 export PYTHON_TARGETS="$(portageq envvar PYTHON_TARGETS)"
 export PYTHON_SINGLE_TARGET="$(portageq envvar PYTHON_SINGLE_TARGET)"
 
-export CURL_SSL="openssl"
-export USE="-* bindist build xml ${BOOTSTRAP_USE} ssl threads"
+export USE="-* bindist build xml curl_ssl_openssl ${BOOTSTRAP_USE} ssl threads"
 export FEATURES="$FEATURES nodoc noman noinfo"
 
 # In some cases permissions of the root directory are false, force them to 755
