@@ -4,6 +4,8 @@ make.conf.oldprofile: [
 # These settings were set by the metro build script that automatically built this stage.
 # Please consult /etc/portage/make.conf.example for a more detailed example.
 
+BINPKG_COMPRESS="$[portage/BINPKG_COMPRESS:zap]"
+BINPKG_COMPRESS_FLAGS="$[portage/BINPKG_COMPRESS_FLAGS:zap]"
 BRANDING="$[release/branding:zap]"
 FEATURES="$[portage/FEATURES:zap]"
 CFLAGS="$[portage/CFLAGS:zap]"
@@ -11,6 +13,7 @@ CXXFLAGS="$[portage/CFLAGS:zap]"
 L10N="$[portage/L10N:zap]"
 LDFLAGS="$[portage/LDFLAGS:zap]"
 LINGUAS="$[portage/LINGUAS:zap]"
+PORTAGE_COMPRESS="$[portage/PORTAGE_COMPRESS:zap]"
 USE="$[portage/USE:zap]"
 ]
 
