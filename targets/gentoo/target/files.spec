@@ -14,6 +14,7 @@ L10N="$[portage/L10N:zap]"
 LDFLAGS="$[portage/LDFLAGS:zap]"
 LINGUAS="$[portage/LINGUAS:zap]"
 PORTAGE_COMPRESS="$[portage/PORTAGE_COMPRESS:zap]"
+PORTAGE_COMPRESS_FLAGS="$[portage/PORTAGE_COMPRESS_FLAGS:zap]"
 USE="$[portage/USE:zap]"
 ]
 

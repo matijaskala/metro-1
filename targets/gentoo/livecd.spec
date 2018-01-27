@@ -74,6 +74,7 @@ then
 	sed -i 's/^[# ]*\(autologin-user=\).*$/\1liveuser/' /etc/lightdm/lightdm.conf
 	sed -i 's/^[# ]*\(autologin-session=\).*$/\1$[desktop/session:zap]/' /etc/lightdm/lightdm.conf
 	sed -i 's/^[# ]*\(greeter-session=\).*$/\1$[desktop/lightdm_greeter:zap]/' /etc/lightdm/lightdm.conf
+	sed -i 's/^[# ]*\(user-session=\).*$/\1$[desktop/session:zap]/' /etc/lightdm/lightdm.conf
 fi
 
 case '$[desktop/lightdm_greeter:lax]' in
@@ -267,7 +268,7 @@ fi
 #chmod +x /sbin/post_unpack
 
 sed -i 's/keymap="us"/keymap="$[locale/keymap:zap]"/' /etc/conf.d/keymaps
-echo "$[locale/lang:zap].UTF-8 UTF-8" >> /etc/locale.gen
+grep -q "$[locale/lang:zap]" /etc/locale.gen || echo "$[locale/lang:zap].UTF-8 UTF-8" >> /etc/locale.gen
 echo "LANG=$[locale/lang:zap].utf8" > /etc/env.d/02locale
 rm -rf /etc/localtime && cp /usr/share/zoneinfo/$[locale/timezone:zap] /etc/localtime || exit 1
 
