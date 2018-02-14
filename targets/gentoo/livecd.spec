@@ -275,25 +275,46 @@ rm -rf /etc/localtime && cp /usr/share/zoneinfo/$[locale/timezone:zap] /etc/loca
 WALLPAPER_PATH=$[desktop/theme/wallpaper:zap]
 test -e "$WALLPAPER_PATH" || WALLPAPER_PATH=`find /usr/share/backgrounds -name $[desktop/theme/wallpaper:zap] | head -n1`
 test -n "$WALLPAPER_PATH" || WALLPAPER_PATH=$[desktop/theme/wallpaper:zap]
-if [ '$[desktop/session:lax]' = xfce ]
-then
+case '$[desktop/session:lax]' in
+xfce)
 	sed -i 's/"ThemeName" type="empty"/"ThemeName" type="string" value="$[desktop/theme/gtk:zap]"/' /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
 	sed -i 's/"IconThemeName" type="empty"/"IconThemeName" type="string" value="$[desktop/theme/icons:zap]"/' /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
-	sed -i 's/\(theme=\)Default/\1$[desktop/theme/xfwm:zap]/' /usr/share/xfwm4/defaults
-elif [ '$[desktop/session:lax]' = lxde ]
-then
+;;
+lxde)
 #	sed -i 's/\(window_manager=\)openbox-lxde/\1fusion-icon/' /etc/xdg/lxsession/LXDE/desktop.conf
 	sed -i 's/\(sNet\/ThemeName=\).*/\1$[desktop/theme/gtk:zap]/' /etc/xdg/lxsession/LXDE/desktop.conf
 	sed -i 's/\(sNet\/IconThemeName=\).*/\1$[desktop/theme/icons:zap]/' /etc/xdg/lxsession/LXDE/desktop.conf
-	sed -i 's/Onyx/$[desktop/theme/openbox:zap]/' /usr/share/lxde/openbox/rc.xml
 	test -n "$WALLPAPER_PATH" && sed -i "s:\(wallpaper=\).*:\1$WALLPAPER_PATH:" /etc/xdg/pcmanfm/LXDE/pcmanfm.conf
-elif [ '$[desktop/session:lax]' = mate ]
-then
+;;
+mate)
 	sed -i 's/Menta/$[desktop/theme/gtk:zap]/' /usr/share/glib-2.0/schemas/org.mate.interface.gschema.xml
 	sed -i 's/menta/$[desktop/theme/icons:zap]/' /usr/share/glib-2.0/schemas/org.mate.interface.gschema.xml
 	sed -i 's/Menta/$[desktop/theme/marco:zap]/' /usr/share/glib-2.0/schemas/org.mate.marco.gschema.xml
 	test -n "$WALLPAPER_PATH" && sed -i "s:>'/usr/share/backgrounds/mate/.*'</:>'$WALLPAPER_PATH'</:" /usr/share/glib-2.0/schemas/org.mate.background.gschema.xml
 	glib-compile-schemas /usr/share/glib-2.0/schemas
+;;
+*)
+	echo 'gtk-theme-name = "$[desktop/theme/gtk:zap]"' >> /etc/gtk-2.0/gtkrc
+	echo 'gtk-icon-theme-name = "$[desktop/theme/icons:zap]"' >> /etc/gtk-2.0/gtkrc
+;;
+esac
+
+sed -i 's/\(theme=\)Default/\1$[desktop/theme/xfwm:zap]/' /usr/share/xfwm4/defaults
+
+case '$[desktop/session:lax]' in
+lxde)
+	sed -i 's/Onyx/$[desktop/theme/openbox:zap]/' /etc/xdg/openbox/LXDE/rc.xml
+;;
+lxqt)
+	sed -i 's/Onyx/$[desktop/theme/openbox:zap]/' /etc/xdg/openbox/lxqt-rc.xml
+;;
+*)
+	sed -i '/<theme>/{n; s@<name>.*</name>@<name>$[desktop/theme/openbox:zap]</name>@}' /etc/xdg/openbox/rc.xml
+;;
+esac
+
+if [ '$[desktop/session:lax]' = lumina ] ; then :
+	sed -i 's@\(session\.styleFile:..*$\)@\1/usr/share/fluxbox/styles/$[desktop/theme/fluxbox:zap]@' /usr/share/lumina-desktop/fluxbox-init-rc
 fi
 
 emerge --depclean --with-bdeps=n
