@@ -294,6 +294,8 @@ mate)
 	glib-compile-schemas /usr/share/glib-2.0/schemas
 ;;
 *)
+	sed -i 's/\(gtk-theme-name \?= \?\).*/\1$[desktop/theme/gtk:zap]/' /etc/gtk-3.0/settings.ini
+	sed -i 's/\(gtk-icon-theme-name \?= \?\).*/\1$[desktop/theme/icons:zap]/' /etc/gtk-3.0/settings.ini
 	echo 'gtk-theme-name = "$[desktop/theme/gtk:zap]"' >> /etc/gtk-2.0/gtkrc
 	echo 'gtk-icon-theme-name = "$[desktop/theme/icons:zap]"' >> /etc/gtk-2.0/gtkrc
 ;;
@@ -322,6 +324,9 @@ emerge --depclean --with-bdeps=n
 sed -i 's@Icon=display@Icon=preferences-desktop-display@' /usr/share/applications/lxrandr.desktop
 sed -i 's@Icon=/usr/share/applications/tilda@Icon=/usr/share/pixmaps/tilda@' /usr/share/applications/tilda.desktop
 sed -i 's@Icon=media-cdrom@Icon=media-optical@' /usr/share/applications/xfburn.desktop
+
+sed -i 's@^text/html=.*$@text/html=$[desktop/web:zap].desktop@' /usr/share/applications/mimeinfo.cache
+update-desktop-database -q /usr/share/applications
 
 rm -rf /usr/src/linux-* /usr/src/linux || exit 1
 ]
