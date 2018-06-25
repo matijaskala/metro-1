@@ -325,8 +325,13 @@ sed -i 's@Icon=display@Icon=preferences-desktop-display@' /usr/share/application
 sed -i 's@Icon=/usr/share/applications/tilda@Icon=/usr/share/pixmaps/tilda@' /usr/share/applications/tilda.desktop
 sed -i 's@Icon=media-cdrom@Icon=media-optical@' /usr/share/applications/xfburn.desktop
 
-sed -i 's@^text/html=.*$@text/html=$[desktop/web:zap].desktop@' /usr/share/applications/mimeinfo.cache
-update-desktop-database -q /usr/share/applications
+if [ -n '$[desktop/web:lax]' ] ; then
+install -d /etc/skel/.local/share/applications/mimeapps.list || exit 1
+cat > /etc/skel/.local/share/applications/mimeapps.list << EOF
+[Default Applications]
+text/html=$[desktop/web:zap].desktop
+EOF
+fi
 
 rm -rf /usr/src/linux-* /usr/src/linux || exit 1
 ]
