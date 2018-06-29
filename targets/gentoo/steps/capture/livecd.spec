@@ -28,7 +28,7 @@ then
 fi
 
 # copy bootloader and kernel
-install -d $cdroot/isolinux || exit 1
+cp -Tr /boot/isolinux $cdroot/isolinux || install -d $cdroot/isolinux || exit 1
 cp "/usr/share/syslinux/isolinux.bin" "$cdroot/isolinux" || exit 1
 for module in $[livecd/isolinux/modules:lax] ; do
 cp "/usr/share/syslinux/$module.c32" "$cdroot/isolinux" || exit 1
@@ -37,16 +37,22 @@ cp -T $[path/chroot/stage]/boot/kernel* $cdroot/isolinux/kernel || exit 1
 cp -T $[path/chroot/stage]/boot/initramfs* $cdroot/isolinux/initramfs || exit 1
 cp -T $[path/chroot/stage]/boot/System.map* $cdroot/isolinux/System.map || exit 1
 
-cat > $cdroot/isolinux/isolinux.cfg << "EOF"
+cat > $cdroot/isolinux/isolinux.cfg << EOF
+default start
+implicit 1
 prompt 1
-timeout 30
-default $[target/build]
+$(test -e $cdroot/isolinux/isolinux.msg && echo display isolinux.msg)
+$(test -e $cdroot/isolinux/isolinux.msg -a -e $cdroot/isolinux/bootlogo && echo ui gfxboot bootlogo isolinux.msg)
+timeout 200
 
-label $[target/build]
+label start
   kernel kernel
-  append root=/dev/ram0 looptype=squashfs loop=/image.squashfs cdroot dosshd overlayfs quiet
-  append root=/dev/ram0 looptype=squashfs loop=/image.squashfs cdroot dosshd overlayfs quiet passwd=$[livecd/passwd:zap]
-  initrd initramfs
+  append initrd=initramfs root=/dev/ram0 looptype=squashfs loop=/image.squashfs cdroot dosshd overlayfs quiet
+
+label harddisk
+  com32 whichsys.c32
+  append -iso- chain.c32 hd0
+
 EOF
 
 # install memtest boot option
