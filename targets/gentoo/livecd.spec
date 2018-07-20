@@ -61,12 +61,21 @@ done
 [ -e /usr/bin/vi ] || [ -e /bin/vi ] || [ ! -e /bin/busybox ] || ln -s busybox /bin/vi || exit 1
 [ -e /usr/bin/vi ] || [ -e /bin/vi ] || [ ! -e /usr/bin/vim ] || ln -s vim /usr/bin/vi || exit 1
 
-which sddm &> /dev/null && ! [ -e /etc/sddm.conf ] && sddm --example-config > /etc/sddm.conf 2> /dev/null
+if which sddm &> /dev/null && test ! -e /etc/sddm.conf
+then
+	sddm --example-config | sed '/^InputMethod/s/qtvirtualkeyboard//' > /etc/sddm.conf 2> /dev/null
+fi
 
 if [ -f /etc/lxdm/lxdm.conf ]
 then
 	sed -i 's/^[# ]*\(autologin=\).*$/\1liveuser/' /etc/lxdm/lxdm.conf
 	sed -i 's/^[# ]*\(gtk_theme=\).*$/\1$[desktop/theme/gtk:zap]/' /etc/lxdm/lxdm.conf
+	install -d /var/lib/lxdm
+	cat > /var/lib/lxdm/lxdm.conf << EOF
+[base]
+last_session=__default__
+last_lang=
+EOF
 fi
 
 if [ -f /etc/lightdm/lightdm.conf ]
@@ -78,7 +87,7 @@ then
 fi
 
 case '$[desktop/lightdm_greeter:lax]' in
-	lightdm-gtk-greeter)
+	''|lightdm-gtk-greeter)
 		if [ -f /etc/lightdm/lightdm-gtk-greeter.conf ]
 		then
 			sed -i 's/^[# ]*\(background=\).*$/\1#295377/' /etc/lightdm/lightdm-gtk-greeter.conf
@@ -104,12 +113,22 @@ if [ -e /etc/sddm.conf ]
 then
 	sed -i 's/^[# ]*\(User=\).*$/\1liveuser/' /etc/sddm.conf
 	sed -i 's/^[# ]*\(Session=\).*$/\1$[desktop/session:zap]/' /etc/sddm.conf
+	sed -i 's/^[# ]*\(Current=\).*$/\1breeze/' /etc/sddm.conf
 fi
 
 if [ -f /etc/xdg/xfce4/helpers.rc ]
 then :
 	sed -i 's/firefox/$[desktop/web:zap]/' /etc/xdg/xfce4/helpers.rc
 	sed -i 's/thunderbird/$[desktop/mail:zap]/' /etc/xdg/xfce4/helpers.rc
+fi
+
+if [ -n '$[desktop/web:lax]' ]
+then
+	install -d /etc/skel/.local/share/applications || exit 1
+	cat > /etc/skel/.local/share/applications/mimeapps.list << EOF
+[Default Applications]
+text/html=$[desktop/web:zap].desktop
+EOF
 fi
 
 if [ -f /etc/xdg/lxpanel/default/panels/panel ]
@@ -464,14 +483,6 @@ emerge --depclean --with-bdeps=n
 sed -i 's@Icon=display@Icon=preferences-desktop-display@' /usr/share/applications/lxrandr.desktop
 sed -i 's@Icon=/usr/share/applications/tilda@Icon=/usr/share/pixmaps/tilda@' /usr/share/applications/tilda.desktop
 sed -i 's@Icon=media-cdrom@Icon=media-optical@' /usr/share/applications/xfburn.desktop
-
-if [ -n '$[desktop/web:lax]' ] ; then
-install -d /etc/skel/.local/share/applications/mimeapps.list || exit 1
-cat > /etc/skel/.local/share/applications/mimeapps.list << EOF
-[Default Applications]
-text/html=$[desktop/web:zap].desktop
-EOF
-fi
 
 rm -rf /usr/src/linux-* /usr/src/linux || exit 1
 ]
