@@ -21,6 +21,9 @@ for src in $[path/mirror/source] ; do
 				tar xpf "$src" -C $[path/chroot] || exit 3
 			fi
 			;;
+		.zst)
+			zstd -qdc "$src" | tar xpf - -C $[path/chroot] || exit 3
+			;;
 		""|.gz|.xz)
 			tar xpf "$src" -C $[path/chroot] || exit 3
 			;;
@@ -41,6 +44,11 @@ for snap in $[path/mirror/tarout]* ; do
 
 	[ ! -d $[path/chroot]/usr/portage ] && install -d $[path/chroot]/usr/portage --mode=0755
 
+	if [ -e /usr/bin/archivemount ] ; then
+		archivemount -o readonly,subtree=portage,kernel_cache "$snap" $[path/chroot]/usr/portage || exit 4
+		continue
+	fi
+
 	echo "Extracting portage snapshot $snap..."
 
 	case "$scomp" in
@@ -51,6 +59,12 @@ for snap in $[path/mirror/tarout]* ; do
 		else
 			tar xpf  "$snap" -C $[path/chroot]/usr || exit 4
 		fi
+		;;
+	.zst)
+		zstd -qdc "$snap" | tar xpf - -C $[path/chroot]/usr || exit 4
+		;;
+	.br)
+		brzip -dc "$snap" | tar xpf - -C $[path/chroot]/usr || exit 4
 		;;
 	""|.gz|.xz)
 		tar xpf "$snap" -C $[path/chroot]/usr || exit 4

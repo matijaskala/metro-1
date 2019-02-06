@@ -37,6 +37,9 @@ case "$[target/compression]" in
 			xz $tarout
 		fi
 		;;
+	zst)
+		zstd -q10 --long --rm $tarout
+		;;
 	gz)
 		gzip $tarout
 		;;

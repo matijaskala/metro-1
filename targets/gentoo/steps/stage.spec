@@ -241,6 +241,8 @@ else
 	fi
 	cp $mkconf $ROOT/etc/portage/make.conf || exit 4
 fi
+# unmount portage tree
+umount /usr/portage
 # clean up temporary locations. Note that this also ends up removing our scripts, which
 # exist in /tmp inside the chroot. So after this cleanup, any execution inside the chroot
 # won't work. This is normally okay.

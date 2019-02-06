@@ -64,6 +64,12 @@ xz)
 		xz $tarout || die "Snapshot xz failure"
 	fi
 	;;
+zst)
+	zstd -q10 --rm $tarout || die "Snapshot zstd failure"
+	;;
+br)
+	brzip -5 $tarout || die "Snapshot brotli failure"
+	;;
 *)
 	echo "Unrecognized compression format $[snapshot/compression] specified for snapshot."
 	exit 1
