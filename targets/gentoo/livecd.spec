@@ -61,11 +61,6 @@ done
 [ -e /usr/bin/vi ] || [ -e /bin/vi ] || [ ! -e /bin/busybox ] || ln -s busybox /bin/vi || exit 1
 [ -e /usr/bin/vi ] || [ -e /bin/vi ] || [ ! -e /usr/bin/vim ] || ln -s vim /usr/bin/vi || exit 1
 
-if which sddm &> /dev/null && test ! -e /etc/sddm.conf
-then
-	sddm --example-config | sed '/^InputMethod/s/qtvirtualkeyboard//' > /etc/sddm.conf 2> /dev/null
-fi
-
 if [ -f /etc/lxdm/lxdm.conf ]
 then
 	sed -i 's/^[# ]*\(autologin=\).*$/\1liveuser/' /etc/lxdm/lxdm.conf
@@ -113,7 +108,20 @@ if [ -e /etc/sddm.conf ]
 then
 	sed -i 's/^[# ]*\(User=\).*$/\1liveuser/' /etc/sddm.conf
 	sed -i 's/^[# ]*\(Session=\).*$/\1$[desktop/session:zap]/' /etc/sddm.conf
-	sed -i 's/^[# ]*\(Current=\).*$/\1breeze/' /etc/sddm.conf
+	test -d /usr/share/sddm/themes/breeze && sed -i 's/^[# ]*\(Current=\).*$/\1breeze/' /etc/sddm.conf
+elif which sddm &> /dev/null
+then
+	cat >> /etc/sddm.conf << EOF
+[Autologin]
+Session=$[desktop/session:zap]
+User=liveuser
+
+EOF
+	test -d /usr/share/sddm/themes/breeze && cat >> /etc/sddm.conf << EOF
+[Theme]
+Current=breeze
+
+EOF
 fi
 
 if [ -f /etc/xdg/xfce4/helpers.rc ]
