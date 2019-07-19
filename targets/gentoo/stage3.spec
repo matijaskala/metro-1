@@ -26,10 +26,6 @@ emerge $eopts -e system $[emerge/packages/first:lax] || exit 1
 # zap the world file and emerge packages
 rm -f /var/lib/portage/world || exit 2
 
-echo '<media-video/gxine-0.5.909 ~$[target/arch:zap]' >> /etc/portage/package.accept_keywords
-echo '<x11-misc/lightdm-gtk-greeter-2.0.3 ~$[target/arch:zap]' >> /etc/portage/package.accept_keywords
-echo 'media-sound/pnmixer ~*' >> /etc/portage/package.accept_keywords
-
 emerge $eopts $[emerge/packages:zap] || exit 1
 
 # add default runlevel services
